@@ -1,0 +1,922 @@
+---
+title: "Minería de Datos, Práctica AirBNB, Cuestión 2"
+author:
+  - Alcázar Gajo, Crist 
+  - Pujol Villegas, Antonio 
+  - Mas Pons, Albert 
+  - Muñoz Navarro, Francisco José 
+  - Campaner Gutiérrez, Joan
+date: "7 de enero, 2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# librarías empleadas para el proyecto
+library(tidyverse, warn.conflicts = FALSE)
+library(stringr, warn.conflicts = FALSE)
+library(rgdal, warn.conflicts = FALSE)
+library(rgeos, warn.conflicts = FALSE)
+library(plotly, warn.conflicts = FALSE)
+library(ggplot2, warn.conflicts = FALSE)
+library(readr, warn.conflicts = FALSE)
+library(data.table, warn.conflicts = FALSE)
+library(magrittr, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
+library(forcats, warn.conflicts = FALSE)
+```
+
+## Apartado 1 ##
+
+En este apartado anotaremos la frecuencia del número de reseñas por apartamento, reflejando cuántos apartamentos han tenido un número determinado de reviews. Tras ello veremos si esta frecuencia tiene junto el rango de distintas frecuencas dadas, una relación potencial o "power law".
+
+```{r}
+listing <- read_csv("data/listingsCiudadesLimpio.csv",show_col_types = FALSE)
+
+aux<-c()
+
+for(i in 1:length(listing$number_of_reviews)){
+
+   if(!is.na(listing$number_of_reviews[i])){
+     aux<-c(aux,listing$number_of_reviews[i])
+  }
+ 
+}
+tabla_frecuencias<- table(aux)
+```
+
+Tras recopilar las frecuencias, presentamos la gráfica.
+
+```{r}
+freqs_data<-as.data.frame(tabla_frecuencias)
+ggplot(data = freqs_data, aes(x = freqs_data$aux, y = freqs_data$Freq, group = 1))+geom_point()+labs(title = "frecuencias vs rango frecuencias")+xlab("rango frecuencias")+ylab("frecuencias")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+```
+
+
+De la gráfica podemos observar y ,por tanto, confirmar que sí se sigue una relación potencial.
+
+## Apartado 2##
+ Reviews por zona, barrio, dias de la semana y meses
+
+```{r}
+#para que todo se muestre en inglés
+Sys.setlocale("LC_TIME","C")
+#para ordenar los plots a la hora de mostrarlo
+month_names <- c("January","February","March","April","May","June","July","August","September","October","November","December")
+day_names <- c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+#creamos el dataset reviews a partir de las tablas de reviews de las ciudades y los listings
+reviews <- read_csv("data/reviewsCiudades.csv",show_col_types = FALSE)
+listings <- read_csv("data/listingsCiudadesLimpio.csv",show_col_types = FALSE)
+#añadimos las características necesarias para agrupar por día de la semana y por mes
+reviews$day <- weekdays(as.Date(reviews$date))
+reviews$month <- month.name[month(as.Date(reviews$date))]
+#al agrupar por un campo es necesario que las columnas tengan el mismo nombre
+setnames(listings, "id", "listing_id")
+#añadimos el barrio al dataset de reviews utilizando el listing_id para relacionar las filas
+reviews <- merge(reviews, listings[, c("listing_id", "neighbourhood_cleansed")], by="listing_id")
+#volvemos a dejar el campo de listings como estaba
+setnames(listings, "listing_id", "id")
+#modificamos el nombre por comodidad
+setnames(reviews, "neighbourhood_cleansed", "zone")
+#ahora montamos las tablas con la información que se pide
+#estas instrucciones realizan la suma del campo number_of_reviews para las agrupaicones de zones y ciudades
+reviews_zone <- aggregate(list(reviews=listings$number_of_reviews), by=list(zona=listings$neighbourhood_cleansed, ciudad=listings$Ciudad), FUN=sum)
+reviews_city <- aggregate(list(reviews=listings$number_of_reviews), by=list(ciudad=listings$Ciudad), FUN=sum) 
+#order descent
+reviews_zone <- reviews_zone[order(-reviews_zone$reviews),] 
+reviews_city <- reviews_city[order(-reviews_city$reviews),] 
+#count para dias y meses
+reviews_day <- data.frame(table(reviews$day))
+setnames(reviews_day, "Freq", "reviews")
+setnames(reviews_day, "Var1", "day")
+reviews_month <- data.frame(table(reviews$month))
+setnames(reviews_month, "Freq", "reviews")
+setnames(reviews_month, "Var1", "month")
+#order descent
+reviews_day <- reviews_day[order(-reviews_day$reviews),] 
+reviews_month <- reviews_month[order(-reviews_month$reviews),] 
+#Las reviews por zonas en orden descendente
+head(reviews_zone)
+#Las reviews por ciudades en orden descendente
+head(reviews_city)
+```
+
+
+Podemos observar como las ciudades con más reviews de nuestro conjunto de datos son México y Barcelona. También podemos observar que los barrios/zonas con más reviews son Cuauhtémoc y Palermo de México y Buenos Aires respectivamente. Palma de Mallorca se encuentra entre las cinco zonas con más reviews del conjunto de muestra seleccionado.
+
+Veamos de manera detallada la interpretación de estos datos.
+
+```{r}
+#plot ordenado
+p <- reviews %>%
+  mutate(day = fct_relevel(day,day_names)) %>%
+  ggplot( aes(x=day, fill=Ciudad)) +
+    geom_bar(position = "dodge")
+p
+```
+
+Si mostramos la cantidad de reviews que reciben los listings en cada ciudad por los días de la semana podemos observar que, de manera general, se producen más reviews en domingo y lunes siendo miércoles y jueves los días que menos reviews se producen.
+
+```{r}
+#plot ordenado
+p <- reviews %>%
+  mutate(month = fct_relevel(month,month_names)) %>%
+  ggplot( aes(x=month, fill=Ciudad)) +
+    geom_bar(position = "dodge")
+p
+```
+
+Realizando el mismo análisis en este caso viendo la cantidad de reviews que hay por mes podemos ver comportamientos distintos según la ciudad del listing. 
+
+Podemos observar que en ciudades como Barcelona, Mallorca y Valencia existe una estacionalidad de las reviews producidas acentuando la cantidad en los meses veraniegos de Junio, Julio, Agosto y Septiembre. Esto podría deberse a que el turismo se acentúa con el clima veraniego en estas ciudades.
+
+En cambio en México observamos que existe un menor despunte de los meses con más reviews frente a los meses con menos reviews ubicando los picos en Marzo y Octubre. Esto podría deberse a que el turismo en esta ciudad no depende tanto del clima como las ciudades anteriormente analizadas.
+
+Por último podemos observar algo de estacionalidad de los meses veraniegos en Buenos Aires que, en este caso, se sitúan entre los meses de Octubre y Marzo dado que se trata del hemisferio sur.
+
+```{r}
+#se observan las ciudades con temporalidad/estacionalidad
+ggplot(data = reviews, aes(x = date, y = Ciudad, group = 1)) +
+    geom_count(alpha=0.01)+
+    scale_size_area(max_size = 10)
+```
+
+En este gráfico podemos observar las ciudades que tienen una estacionalidad más marcada frente a las que no. 
+
+Cabe destacar también cómo la irrupción de la Covid-19 provocó un descenso de las reviews sin precedentes a principios de 2020 así como también se ha alcanzado el número de reviews habitual en las últimas mediciones en la mayoría de ciudades excepto en Buenos Aires.
+
+## Apartado 3 ##
+
+En este apartado recopilaremos el precio medio de todo el periodo, el número medio de camas, y el número medio de habitaciones de todos los apartamentos pertenecientes a los 5 barrios, con más apartamentos, de las 5 ciudades propuestas.
+
+```{r}
+
+barriosMallorca<-c()
+barriosValencia<-c()
+barriosMexico<-c()
+barriosBuenos<-c()
+barriosBarcelona<-c()
+
+for(i in 1:length(listing$Ciudad)){
+  
+   if(listing$Ciudad[i] == "Mallorca"){
+     barriosMallorca<-c(barriosMallorca,listing$neighbourhood_cleansed[i])
+   }
+  if(listing$Ciudad[i] == "Barcelona"){
+     barriosBarcelona<-c(barriosBarcelona,listing$neighbourhood_cleansed[i])
+  }
+  if(listing$Ciudad[i] == "Valencia"){
+     barriosValencia<-c(barriosValencia,listing$neighbourhood_cleansed[i])
+  }
+  if(listing$Ciudad[i] == "Mexico"){
+     barriosMexico<-c(barriosMexico,listing$neighbourhood_cleansed[i])
+  }
+  if(listing$Ciudad[i] == "Buenos Aires"){
+     barriosBuenos<-c(barriosBuenos,listing$neighbourhood_cleansed[i])
+  }
+ 
+}
+
+barriosMallorca<-table(barriosMallorca)
+barriosValencia<-table(barriosValencia)
+barriosMexico<-table(barriosMexico)
+barriosBuenos<-table(barriosBuenos)
+barriosBarcelona<-table(barriosBarcelona)
+
+barriosMallorca<-barriosMallorca[order(unlist(barriosMallorca))]
+barriosMallorcaFiltrados<-data.frame(tail(barriosMallorca, 5))
+
+barriosValencia<-barriosValencia[order(unlist(barriosValencia))]
+barriosValenciaFiltrados<-data.frame(tail(barriosValencia, 5))
+
+barriosMexico<-barriosMexico[order(unlist(barriosMexico))]
+barriosMexicoFiltrados<-data.frame(tail(barriosMexico, 5))
+
+barriosBuenos<-barriosBuenos[order(unlist(barriosBuenos))]
+barriosBuenosFiltrados<-data.frame(tail(barriosBuenos, 5))
+
+barriosBarcelona<-barriosBarcelona[order(unlist(barriosBarcelona))]
+barriosBarcelonaFiltrados<-data.frame(tail(barriosBarcelona, 5))
+
+#Creamos un dataframe que contendra los 5 barrios son mas viviendas vacacionales de la 5 ciudades
+
+barriosTotales=data.frame("Mallorca"=barriosMallorcaFiltrados$barriosMallorca)
+barriosTotales=cbind(barriosTotales,"Valencia"=barriosValenciaFiltrados$barriosValencia)
+barriosTotales=cbind(barriosTotales,"Mexico"=barriosMexicoFiltrados$barriosMexico)
+barriosTotales=cbind(barriosTotales,"Buenos Aires"=barriosBuenosFiltrados$barriosBuenos)
+barriosTotales=cbind(barriosTotales,"Barcelona"=barriosBarcelonaFiltrados$barriosBarcelona)
+
+#Creamos el dataframe que contendra los valores finales medios 
+
+datos <- data.frame(precioMedio=integer(),
+                 habMedia=integer(), 
+                 camasMedia=integer(), 
+                 barrio=character(),
+                 ciudad=character()) 
+```
+
+Tras obtener los cinco barrios con mas viviendas de las cinco ciudades pasamos a calcular la media del precio, de las habitaciones y de la camas por barrio. Una vez hechas lo guardaremos todo dentro de un data set llamado datos
+
+```{r}
+
+for(j in 1:length(barriosTotales)){
+  
+  for(i in 1:length(barriosTotales[,j])){
+    
+  aux2<-select( listing[listing$neighbourhood_cleansed == barriosTotales[i,j],], price , bedrooms , beds )
+    
+  aux2$price[is.na(aux2$price)]<-0
+  aux2$bedrooms[is.na(aux2$bedrooms)]<-0
+  aux2$beds[is.na(aux2$beds)]<-0
+  
+  #Hacemos la conversion de moneda a Euros empleando una ponderación aproximada a la actual
+  if(colnames(barriosTotales[j])=="Mexico"){
+    aux2$price<-aux2$price * 0.043
+  }
+  if(colnames(barriosTotales[j])=="Buenos Aires"){
+    aux2$price<-aux2$price * 0.0086
+  }
+    
+  precioMedio<-sum(aux2$price)/length(aux2$price)
+  habMedio<-sum(aux2$bedrooms)/length(aux2$bedrooms)
+  camasMedio<-sum(aux2$beds)/length(aux2$beds)
+     
+  nuevosDatos=data.frame( precioMedio=precioMedio, habMedia=habMedio, camasMedia=camasMedio, barrio=barriosTotales[i,j] , ciudad=colnames(barriosTotales[j]))
+  datos=rbind(datos,nuevosDatos)
+    
+  }
+ 
+}
+
+print.data.frame(datos)
+
+```
+
+A partir de los datos recopilados en el DataFrame, podemos observar que:
+
+1- Los precios más caros, para este caso, son para los apartamentos de Mallorca,Valencia y Barcelona, mientras que los más baratos serían los de Mexico y Buenos Aires. 
+
+2- Los precios en cada ciudad, para cada barrio, varían más en Barcelona que en el resto.
+
+3- Suele haber más habitaciones de media en los apartamentos de Mallorca que en los ofertados en las otras ciudades con considerable diferencia.
+
+4- De nuevo, y posiblemente en relación con el punto anterior, los apartamentos de Mallorca ofrecen más camas que los ofertados por otras ciudades con destacable diferencia, siendo el caso de Mexico donde menos camas, de media, se ofertan.
+
+## Apartado 4 ##
+
+Para la serie temporal de los precios medios, máximos y mínimos por día, semana y mes se realizará el estudio desde noviembre de 2021 hasta octubre de 2022.
+Necesitamos los precios y las fechas, que estan en los archivos calendar.csv para obtener los datos
+
+```{r}
+priceMallorca <- read_csv("data/Mallorca/calendar.csv",show_col_types = FALSE)
+priceBarcelona <- read_csv("data/Barcelona/calendar.csv",show_col_types = FALSE)
+priceValencia<- read_csv("data/Valencia/calendar.csv",show_col_types = FALSE)
+priceMexico<- read_csv("data/Mexico/calendar.csv",show_col_types = FALSE)
+priceBuenosAires<- read_csv("data/Buenos_Aires/calendar.csv",show_col_types = FALSE)
+
+priceColumns <- c("date","price")
+
+
+cpriceMallorca <- priceMallorca[priceColumns]
+cpriceBarcelona <- priceBarcelona[priceColumns]
+cpriceValencia <- priceValencia[priceColumns]
+cpriceMexico <- priceMexico[priceColumns]
+cpriceBuenosAires <- priceBuenosAires[priceColumns]
+
+# Si queremos comparar las ciudades tendríamos que coger los datos de forma coherente, empezando por una misma fecha, pore ejemplo a partir del 1 de noviembre de 2021 para tener todos los datos en el mismo inicio. Podría hacerse como sigue:
+
+# Añadimos la columna para la ciudad
+dfpriceMallorca <- cbind(cpriceMallorca,Ciudad=c("Mallorca"))
+dfpriceBarcelona <- cbind(cpriceBarcelona,Ciudad=c("Barcelona"))
+dfpriceValencia <- cbind(cpriceValencia,Ciudad=c("Valencia"))
+dfpriceMexico <- cbind(cpriceMexico,Ciudad=c("Mexico"))
+dfpriceBuenosAires <- cbind(cpriceBuenosAires,Ciudad=c("Buenos Aires"))
+
+dfpriceMallorca$Ciudad<-as.factor(dfpriceMallorca$Ciudad)
+dfpriceBarcelona$Ciudad<-as.factor(dfpriceBarcelona$Ciudad)
+dfpriceValencia$Ciudad<-as.factor(dfpriceValencia$Ciudad)
+dfpriceMexico$Ciudad<-as.factor(dfpriceMexico$Ciudad)
+dfpriceBuenosAires$Ciudad<-as.factor(dfpriceBuenosAires$Ciudad)
+
+#Unimos todos los dataframes en uno único
+prices <- rbind(dfpriceMallorca, dfpriceBarcelona, dfpriceValencia, dfpriceMexico, dfpriceBuenosAires)
+
+# y limpiamos los datos
+
+prices$price = gsub("\\,", "", prices$price)
+
+prices$price = as.numeric(gsub("\\$", "", prices$price))
+prices$date <- as.Date(prices$date)
+prices<-na.omit(prices)
+
+prices$price[prices$Ciudad == "Mexico"]<- prices$price[prices$Ciudad == "Mexico"] * 0.043
+prices$price[prices$Ciudad == "Buenos Aires"]<- prices$price[prices$Ciudad == "Buenos Aires"] * 0.0086
+
+```
+ 
+Serie temporal para cada ciudad:
+
+Hemos detectado precios gratuitos y valores muy altos que desvirtuan las medias y los valores mínimos y máximos,
+podríamos utilizar un filtro para no considerarlos.
+
+```{r}
+diasCiudad<- data.frame()
+valoresCiudad<- data.frame()
+tsCiudad.ts<- ts()
+
+# bucle para filtrar los precios por día
+for(i in 1:length(unique(listing$Ciudad))){
+    
+  valoresCiudad<- select(prices[prices$Ciudad == unique(listing$Ciudad)[i],],date,price,Ciudad) %>% group_by(date)
+  
+  if(i == 1){
+    diasCiudad  <-  valoresCiudad %>% group_by(date) %>% group_by(date) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valoresCiudad$Ciudad)
+    )
+  
+  } else {
+    diasCiudad  <-  rbind(diasCiudad,valoresCiudad %>% group_by(date) %>% group_by(date) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valoresCiudad$Ciudad)
+    ))
+  }
+  
+}
+
+```
+
+Elaboramos las gráficas para la evolución por días.
+
+```{r}
+# precio medio
+ggplot(data = diasCiudad, aes(x = date, y = media, colour = Ciudad, group = 1))+geom_point()+labs(title = "Evolución precio medio por día")+ylab("precio medio")+xlab("día")+scale_x_date(guide = guide_axis(check.overlap = TRUE))
+
+#precio minimo
+ggplot(data = diasCiudad, aes(x = date, y = minim, colour = Ciudad, group = 1))+geom_point()+labs(title = "Evolución precio mínimo por día")+ylab("precio mínimo")+xlab("día")+scale_x_date(guide = guide_axis(check.overlap = TRUE))
+
+#precio máximo
+ggplot(data = diasCiudad, aes(x = date, y = maxim, colour = Ciudad, group = 1))+geom_point()+labs(title = "Evolución precio máximo por día")+ylab("precio máximo")+xlab("día")+scale_x_date(guide = guide_axis(check.overlap = TRUE))
+```
+
+En lo que respecta a la evolución diaria, vemos que:
+
+1-Para el precio medio, las ciudades de Mexico y Buenos Aires tienen una tendencia similar tanto en progresión como en valores, mientras que las demás ciudades tien una progresión ascendente a lo larco del año, pero donde Valencia se desmarca con la diferencia de tener valores menores que Mallorca y Barcelona.Algo a notar es que a finales de 2022 los valores menguan.
+
+2-Para el precio mínimo nos encontramos que todas las ciudades han tenido alguna vez un apartamento con un precio de 0€ hasta finales del año 2022, donde esto cambia. Sin embargo, en Valencia ha sifo distinto de 0 durante todo el periodo.
+
+3-Para el precio máximo, todas las ciudades siguen en mayor medida una pregresión de valores constantes exceptuando Mallorca, donde los precios máximos se disparan considerablemente en temporada de primavera de 2022.
+
+También se puede inferir del precio medio que, si bien a distinta escala, los precios han ido subiendo indefinidamente hasta finales de 2022, pero siempre con mayor intensidad en los cambios de estaciones, donde los valores en Mallorca, Barcelona, y Valencia se incrementan súbitamente.
+
+Por otro lado, se aprecia como algo curioso que, en lo que respecta a los precios máximos, Mallorca tenga un incremento y decremnto súbito del mismo en un periodo concreto de 2022, que puede no ser representativo ni orientativo de los costes máximos por su desbordado valor y brusca variación.
+
+```{r}
+# bucle para filtrar los precios por mes
+mesCiudad<- data.frame()
+valores_mes_Ciudad<- data.frame()
+ts_mes_Ciudad.ts<- ts()
+
+# bucle para filtrar los precios por mes
+for(i in 1:length(unique(listing$Ciudad))){
+    
+  valores_mes_Ciudad<- select(prices[prices$Ciudad == unique(listing$Ciudad)[i],],date,price,Ciudad) %>% group_by(date)
+  
+  if(i == 1){
+    mesCiudad  <-  valores_mes_Ciudad %>% mutate(month = format(date, "%m"), year = format(date, "%Y")) %>% group_by(month, year) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valores_mes_Ciudad$Ciudad)
+    )
+  
+  } else {
+    mesCiudad  <-  rbind(mesCiudad,valores_mes_Ciudad %>% mutate(month = format(date, "%m"), year = format(date, "%Y")) %>% group_by(month, year) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valores_mes_Ciudad$Ciudad)
+    ))
+  }
+  
+}
+
+```
+
+Elaboramos las gráficas para la evolución por meses.
+
+```{r}
+# precio medio
+ggplot(data = mesCiudad, aes(x = month, y = media, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio medio por mes")+ylab("precio medio")+xlab("mes")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+
+#precio minimo
+ggplot(data = mesCiudad, aes(x = month, y = minim, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio mínimo por mes")+ylab("precio mínimo")+xlab("mes")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+
+#precio máximo
+ggplot(data = mesCiudad, aes(x = month, y = maxim, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio máximo por mes")+ylab("precio máximo")+xlab("mes")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+```
+
+En lo que respecta a la evolución mensual, se aprecia la misma información que en el gráfico de días de una forma más distribuida, pero dado que eso impedía discernir claramente la iconografía del gráfico, se ha optado por cambiar las formas de los puntos según la ciudad que representan, y también acentuar su transparencia para ver los solapamientos.
+
+```{r}
+# bucle para filtrar los precios por año
+añoCiudad<- data.frame()
+valores_año_Ciudad<- data.frame()
+ts_año_Ciudad.ts<- ts()
+
+# bucle para filtrar los precios por año
+for(i in 1:length(unique(listing$Ciudad))){
+    
+  valores_año_Ciudad<- select(prices[prices$Ciudad == unique(listing$Ciudad)[i],],date,price,Ciudad) %>% group_by(date)
+  
+  if(i == 1){
+    añoCiudad  <-  valores_año_Ciudad %>% mutate(year = format(date, "%Y")) %>% group_by(year) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valores_año_Ciudad$Ciudad)
+    )
+  
+  } else {
+    añoCiudad  <-  rbind(añoCiudad,valores_año_Ciudad %>% mutate(year = format(date, "%Y")) %>% group_by(year) %>% summarise(
+    media = mean(price),
+    maxim = max(price),
+    minim = min(price),
+    Ciudad = unique(valores_año_Ciudad$Ciudad)
+    ))
+  }
+  
+}
+```
+
+Elaboramos las gráficas para la evolución por años.
+
+```{r}
+# precio medio
+ggplot(data = añoCiudad, aes(x = year, y = media, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio medio por año")+ylab("precio medio")+xlab("año")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+
+#precio minimo
+ggplot(data = añoCiudad, aes(x = year, y = minim, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio mínimo por año")+ylab("precio mínimo")+xlab("año")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+
+#precio máximo
+ggplot(data = añoCiudad, aes(x = year, y = maxim, colour = Ciudad, group = 1))+geom_point(aes(size = 10, alpha = 0.4, shape = factor(Ciudad)))+labs(title = "Evolución precio máximo por año")+ylab("precio máximo")+xlab("año")+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+```
+
+En lo que respecta a la evolución anual, se aprecia y produce la misma información y preblemática, respectivamente, que en la gráfica anterior, por lo que se ha mantenido el diseño de la gráfica. 
+
+## Apartado 5##
+
+Representacion del numero de aparatamentos y su precio medio en navidad  
+
+```{r, include=FALSE}
+mapa <- rgdal::readOGR(
+          paste0("./datos/lineas_limite/recintos_municipales_inspire_peninbal_etrs89/",
+                 "recintos_municipales_inspire_peninbal_etrs89.shp"), use_iconv = TRUE, encoding = "UTF-8"
+        )
+mapa_arg <- rgdal::readOGR(
+          paste0("./datos/lineas_limite/municipios_arg/",
+                 "barrios_badata_wgs84.shp"), use_iconv = TRUE, encoding = "UTF-8"
+        )
+mapa_mex <- rgdal::readOGR(
+          paste0("./datos/lineas_limite/municipios_mex/",
+                 "mun.shp"), use_iconv = TRUE, encoding = "UTF-8"
+        )
+mapa_bcn <- rgdal::readOGR(
+          paste0("./datos/lineas_limite/barcelona_distrito/",
+                 "shapefiles_barcelona_distrito.shp"), use_iconv = TRUE, encoding = "UTF-8"
+        )
+mapa_vlc <- rgdal::readOGR(
+          paste0("./datos/lineas_limite/valencia_distrito/",
+                 "DISTRITOS.shp"), use_iconv = TRUE, encoding = "UTF-8"
+        )
+mapa_df <- fortify(model = mapa, region = "NATCODE")
+
+mapa_arg_df <- fortify(model = mapa_arg, region = "BARRIO")
+
+mapa_mex_df <- fortify(model = mapa_mex, region = "CVEGEO")
+mapa_mex_df$long <- mapa_mex_df$long / 100000
+mapa_mex_df$lat <- mapa_mex_df$lat / 100000
+
+mapa_bcn_df <- fortify(model = mapa_bcn, region = "c_distri")
+mapa_vlc_df <- fortify(model = mapa_vlc, region = "coddistrit")
+
+mapa_vlc_df$long <- mapa_vlc_df$long / 100000
+mapa_vlc_df$lat <- mapa_vlc_df$lat / 100000
+```
+
+```{r}
+info_municipios <- mapa@data
+
+info_municipios_arg <- mapa_arg@data
+info_municipios_arg$COMUNA <- as.character(info_municipios_arg$COMUNA)
+
+info_municipios_mex <- mapa_mex@data
+
+info_municipios_bcn <- mapa_bcn@data
+Encoding(info_municipios_bcn$n_distri) <- "UTF-8"
+
+info_municipios_vlc <- mapa_vlc@data
+```
+
+```{r}
+info_municipios <- info_municipios %>%
+                    mutate(
+                      pais       = str_sub(string = NATCODE, start = 1, end = 2),
+                      c_autonoma = str_sub(string = NATCODE, start = 3, end = 4),
+                      provincia  = str_sub(string = NATCODE, start = 5, end = 6),
+                      municipio  = str_sub(string = NATCODE, start = 7, end = -1)
+                    ) %>%
+                    rename(nombre_municipio = NAMEUNIT)
+
+# Se seleccionan las columnas de interés
+info_municipios <- info_municipios %>%
+                   select(
+                     NATCODE, nombre_municipio, c_autonoma, provincia, municipio
+                   )
+
+info_municipios_bcn <- info_municipios_bcn %>%
+                   select(
+                     c_distri, n_distri
+                   )
+```
+
+Se añade la información de los municipios
+
+```{r}
+mapa_df <- mapa_df %>%
+           left_join(info_municipios, by = c("id" = "NATCODE"))
+
+mapa_arg_df <- mapa_arg_df %>%
+           left_join(info_municipios_arg, by = c("id" = "BARRIO"))
+mapa_arg_df$id <- tolower(mapa_arg_df$id)
+mapa_arg_df$id <- gsub("(^|[[:space:]])([[:alpha:]])", "\\1\\U\\2",    # Uppercase with Base R
+     mapa_arg_df$id,
+     perl = TRUE)
+
+mapa_mex_df <- mapa_mex_df %>%
+           left_join(info_municipios_mex, by = c("id" = "CVEGEO"))
+
+mapa_bcn_df <- mapa_bcn_df %>%
+           left_join(info_municipios_bcn, by = c("id" = "c_distri"))
+
+mapa_vlc_df <- mapa_vlc_df %>%
+           left_join(info_municipios_vlc, by = c("id" = "coddistrit"))
+```
+
+Se eliminan puntos (se reduce la resolución)
+ 
+```{r}
+
+mapa_df <- mapa_df %>%
+           slice(seq(1, nrow(mapa_df), 5))
+
+mapa_arg_df <- mapa_arg_df %>%
+           slice(seq(1, nrow(mapa_arg_df), 5))
+
+mapa_mex_df <- mapa_mex_df %>%
+           slice(seq(1, nrow(mapa_mex_df), 5))
+
+mapa_bcn_df <- mapa_bcn_df %>%
+           slice(seq(1, nrow(mapa_bcn_df), 5))
+
+mapa_vlc_df <- mapa_vlc_df %>%
+           slice(seq(1, nrow(mapa_vlc_df), 5))
+
+# Se selecciona Ciudad de México
+mapa_df_ciumex <- mapa_mex_df %>% filter(CVE_ENT == "09")
+```
+
+Elegimos los datos a representar
+
+```{r}
+reviews <- read_csv("data/reviewsCiudades.csv",show_col_types = FALSE)
+listings <- read_csv("data/listingsCiudadesLimpio.csv",show_col_types = FALSE)
+
+reviews <- reviews %>% select(listing_id, id, date)
+reviews <- reviews %>% filter(date >= "2020-12-23" & date <= "2021-02-01")
+
+listings <- listings %>% select(id, price, Ciudad, neighbourhood_cleansed,neighbourhood_group_cleansed)
+listings$neighbourhood_cleansed <- tolower(listings$neighbourhood_cleansed)
+listings$neighbourhood_group_cleansed <- tolower(listings$neighbourhood_group_cleansed)
+```
+
+En este for lo que hacemos es utilizar el valor de neighbourhood_cleansed por los de neighbourhood_group_cleansed para que los use el mapa.
+
+```{r}
+listings$neighbourhood_cleansed <- recode(listings$neighbourhood_cleansed, "palma de mallorca"="palma")
+
+#BARCELONA
+for (i in 1:length(listings$id)) {
+  if(listings$Ciudad[i]=="Valencia" | listings$Ciudad[i]=="Barcelona"){
+     listings$neighbourhood_cleansed[i]<-listings$neighbourhood_group_cleansed[i]
+  }
+}
+listings$neighbourhood_cleansed <- recode(listings$neighbourhood_cleansed, "l'eixample"="eixample")
+mapa_df$nombre_municipio <- tolower(mapa_df$nombre_municipio)
+
+```
+
+```{r}
+reviews <- reviews %>%
+           left_join(listings, by = c("listing_id" = "id"))
+reviews_1 <- aggregate(reviews[, 4], list(reviews$neighbourhood_cleansed), mean)
+reviews_2 <- aggregate(reviews$neighbourhood_cleansed, list(reviews$neighbourhood_cleansed), length)
+```
+
+```{r}
+mapa_df <- mapa_df %>% 
+           left_join(
+              y  = reviews_1,
+              by = c("nombre_municipio" = "Group.1")
+           )
+mapa_df <- mapa_df %>% 
+           left_join(
+              y  = reviews_2,
+              by = c("nombre_municipio" = "Group.1")
+           )
+
+```
+
+En los siguientes mapas analizamos el número de reservas y su precio medio en la última época navideña. (23-12-2020 hasta 2-1-2021).
+Tenemos que tener en cuenta que es posible que haya menos reservas producidas por la pandemia y sus restricciones.Todos los mapas
+muestran su precio en la moneda local.
+
+```{r}
+# Se selecciona Islas baleares
+mapa_df_mallorca <- mapa_df %>% filter(provincia == "07", long > 2.2, long < 3.5)
+
+mapa_df_mallorca %>%
+ggplot(aes(x = long, y = lat, group = group, fill = price)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Municipios de Mallorca",
+       subtitle = "Color por precio medio") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+```{r}
+mapa_df_mallorca %>%
+ggplot(aes(x = long, y = lat, group = group, fill = x)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Municipios de Mallorca",
+       subtitle = "Color por número reservas") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Cuando miramos las reservas realizadas en Mallorca, podemos observar que en estas 2 semanas festivas
+no hay un gran número de reservas. Solo hay una cantidad decente en Palma de Mallorca. Al ser invierno,
+seguramente las zonas más centradas en su turismo de costa no destacan tanto, mientras en la ciudad se
+puede ver toda la decoración navideña por sus calles, lo que llama más la atención a la hora de hacer una
+reserva.
+
+```{r}
+mapa_bcn_df$n_distri <- tolower(mapa_bcn_df$n_distri)
+mapa_bcn_df <- mapa_bcn_df %>% 
+           left_join(
+              y  = reviews_1,
+              by = c("n_distri" = "Group.1")
+           )
+mapa_bcn_df <- mapa_bcn_df %>% 
+           left_join(
+              y  = reviews_2,
+              by = c("n_distri" = "Group.1")
+           )
+
+mapa_bcn_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = price)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Barcelona",
+       subtitle = "Color por precio medio") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+mapa_bcn_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = x)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Barcelona",
+       subtitle = "Color por número reservas") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+En Barcelona sí vemos más reservas realizadas, la zona de Eixample siendo la más solicitada. Nos podemos fijar que las zonas 
+costeras son las más reservadas y las más caras. Barcelona tiene mucho turismo que no depende del verano, por lo tanto, puede
+que sea una zona más apetecible para visitar en estas fechas señaladas.
+
+```{r}
+mapa_vlc_df$nombre <- tolower(mapa_vlc_df$nombre)
+mapa_vlc_df <- mapa_vlc_df %>% 
+           left_join(
+              y  = reviews_1,
+              by = c("nombre" = "Group.1")
+           )
+mapa_vlc_df <- mapa_vlc_df %>% 
+           left_join(
+              y  = reviews_2,
+              by = c("nombre" = "Group.1")
+           )
+
+
+mapa_vlc_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = price)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Valencia",
+       subtitle = "Color por precio medio") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+mapa_vlc_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = x)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Valencia",
+       subtitle = "Color por número reservas") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+De Valencia destaca el númmero de reservas como su precio bastante inferior a las otras 2 ciudades analizadas de España.
+La zona más solicitada es Ciutat Vella. Sorprende que tenga tantas reservas en comparación al resto de zonas de la ciudad.
+
+```{r}
+mapa_arg_df$id <- tolower(mapa_arg_df$id)
+mapa_arg_df <- mapa_arg_df %>% 
+           left_join(
+              y  = reviews_1,
+              by = c("id" = "Group.1")
+           )
+mapa_arg_df <- mapa_arg_df %>% 
+           left_join(
+              y  = reviews_2,
+              by = c("id" = "Group.1")
+           )
+
+mapa_arg_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = price)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Argentina",
+       subtitle = "Color por precio medio") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+```{r}
+mapa_arg_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = x)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Barrios de Argentina",
+       subtitle = "Color por número reservas") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+La ciudad de Buenos Aires goza de unas temperaturas cálidas en estas fechas. Por su zona en el globo terrestre,
+se encuentran en pleno verano. Así podemos observar como hay bastantes más reservas para estas fechas. Las zonas
+costeras son las más solicitadas al igual que las más caras. Destaca el barrio de Palermo como la zona con más reservas.
+
+
+```{r}
+mapa_ciumex_df <- mapa_mex_df %>% filter(CVE_ENT == "09")
+mapa_ciumex_df$NOMGEO <- tolower(mapa_ciumex_df$NOMGEO)
+mapa_ciumex_df <- mapa_ciumex_df %>% 
+           left_join(
+              y  = reviews_1,
+              by = c("NOMGEO" = "Group.1")
+           )
+mapa_ciumex_df <- mapa_ciumex_df %>% 
+           left_join(
+              y  = reviews_2,
+              by = c("NOMGEO" = "Group.1")
+           )
+
+mapa_ciumex_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = price)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Ciudad de México",
+       subtitle = "Color por precio medio") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+```{r}
+mapa_ciumex_df %>%
+ggplot(aes(x = long, y = lat, group = group, fill = x)) +
+  geom_polygon(color = "black") +
+  coord_map("mercator") +
+  scale_fill_viridis_c() +
+  labs(title = "Ciudad de México",
+       subtitle = "Color número reservas") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+La Ciudad de México se encuentra cerca del ecuador, por lo cual tiene buenas temperaturas
+la mayor parte del año. De esta forma, no se ve muy alterado el número de reservas en esta
+época del año. Cuenta con bastantes reservas en toda la ciudad, destacando la zona de Cuauhtémoc
+como la parte más solicitada de la ciudad.
+

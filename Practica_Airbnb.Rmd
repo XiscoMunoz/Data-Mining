@@ -1,0 +1,205 @@
+---
+title: "Minería de Datos, Práctica AirBNB, Cuestión 1"
+author:
+  - Alcázar Gajo, Crist 
+  - Pujol Villegas, Antonio 
+  - Mas Pons, Albert 
+  - Muñoz Navarro, Francisco José 
+  - Campaner Gutiérrez, Joan
+date: "7 de diciembre, 2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Seleccionamos columnas y fusionamos data frames en un solo archivo**
+
+```{r}
+library(readr)
+library(naniar)
+
+#listing.csv
+listingsMallorca <- read_csv("data/Mallorca/listings.csv.gz")
+listingsBarcelona <- read_csv("data/Barcelona/listings.csv.gz")
+listingsValencia<- read_csv("data/Valencia/listings.csv.gz")
+listingsMexico<- read_csv("data/Mexico/listings.csv.gz")
+listingsBuenosAires<- read_csv("data/Buenos_Aires/listings.csv.gz")
+
+selectedColumns <- c("id","host_response_time","host_response_rate","host_acceptance_rate","host_is_superhost","host_verifications","host_has_profile_pic","host_identity_verified","instant_bookable","number_of_reviews","number_of_reviews_ltm","number_of_reviews_l30d","review_scores_rating","review_scores_value","reviews_per_month","room_type","neighbourhood_cleansed","accommodates","bathrooms_text","bedrooms","beds","host_since","first_review","last_review","amenities","price")
+
+clistingsMallorca <- listingsMallorca[selectedColumns]
+clistingsBarcelona <- listingsBarcelona[selectedColumns]
+clistingsValencia <- listingsValencia[selectedColumns]
+clistingsMexico <- listingsMexico[selectedColumns]
+clistingsBuenosAires <- listingsBuenosAires[selectedColumns]
+
+dfMallorca <- cbind(clistingsMallorca,Ciudad=c("Mallorca"))
+dfBarcelona <- cbind(clistingsBarcelona,Ciudad=c("Barcelona"))
+dfValencia <- cbind(clistingsValencia,Ciudad=c("Valencia"))
+dfMexico <- cbind(clistingsMexico,Ciudad=c("Mexico"))
+dfBuenosAires <- cbind(clistingsBuenosAires,Ciudad=c("Buenos Aires"))
+
+#Unimos todos los dataframes en uno único
+listing <- rbind(dfMallorca, dfBarcelona, dfValencia, dfMexico, dfBuenosAires)
+
+#Guardamos los nuevos datos
+write_csv(x = listing, "data/listingsCiudades.csv")
+
+
+#reviews.csv
+reviewsMallorca <- cbind(read_csv("data/Mallorca/reviews.csv.gz"), Ciudad=c("Mallorca"))
+reviewsBarcelona <- cbind(read_csv("data/Barcelona/reviews.csv.gz"), Ciudad=c("Barcelona"))
+reviewsValencia <- cbind(read_csv("data/Valencia/reviews.csv.gz"), Ciudad=c("Valencia"))
+reviewsMexico <- cbind(read_csv("data/Mexico/reviews.csv.gz"), Ciudad=c("Mexico"))
+reviewsBuenosAires <- cbind(read_csv("data/Buenos_Aires/reviews.csv.gz"), Ciudad=c("Buenos Aires"))
+#Unimos todos los dataframes en uno único
+reviews <- rbind(reviewsMallorca, reviewsBarcelona, reviewsValencia, reviewsMexico, reviewsBuenosAires)
+#Guardamos los nuevos datos
+write_csv(x = reviews, "data/reviewsCiudades.csv")
+
+
+#calendar.csv
+#...
+```
+
+**Quitamos NAs**
+
+```{r}
+
+#Posibles maneras de escribir N/A
+na_strings <- c("NA", "N A", "N / A", "N/A", "N/ A", "Not Available", "NOt available")
+
+#Recuperamos convirtiendo las posibles combinaciones N/A a NA's
+listingNAs <- read_csv("data/listingsCiudades.csv", na = na_strings)
+
+#Eliminamos las filas que tienen NAs
+listingNoNAs <- na.omit(listingNAs)
+
+#Pos si queremos contar quantos NAs hay o la media
+nascantidad <- apply(X = is.na(listingNAs), MARGIN = 1, FUN = sum)
+
+#Añadimos una nueva columna con la cantidad total de NAs en cada fila
+listingNAs <- cbind(listingNAs,nascantidad)
+
+#Ahora podemos elegir dejar las filas que tengan un número de NAs segun la condición siguiente (ahora < 3)
+listings <- listingNAs[listingNAs$nascantidad < 6,]
+```
+
+**Factorizamos cadena de carecteres**
+
+```{r}
+#categorizado de cadenas de caracteres
+
+listings$neighbourhood_cleansed<-as.factor(listings$neighbourhood_cleansed)
+
+listings$room_type = gsub("Entire home/apt", "1", listings$room_type)
+listings$room_type = gsub("Private room", "2", listings$room_type)
+listings$room_type = gsub("Hotel room", "3", listings$room_type)
+listings$room_type = gsub("Shared room", "4", listings$room_type)
+listings$room_type = as.numeric(listings$room_type)
+
+listings$host_response_time = gsub("within an hour", "1", listings$host_response_time)
+listings$host_response_time = gsub("within a day", "24", listings$host_response_time)
+listings$host_response_time = gsub("within a few hours", "6", listings$host_response_time)
+listings$host_response_time = gsub("a few days or more", "72", listings$host_response_time)
+listings$host_response_time = as.numeric(listings$host_response_time)
+```
+
+**Cambiamos de caracteres a numero**
+
+```{r}
+#impiado de texto y pasado a int
+listings$bathrooms_text<-sub("bath","",listings$bathrooms_text)
+listings$bathrooms_text<-sub("private","",listings$bathrooms_text)
+listings$bathrooms_text<-sub("shared","",listings$bathrooms_text)
+listings$bathrooms_text<-as.numeric(sub("s","",listings$bathrooms_text))
+
+```
+
+**Quitamos signo dolar y pasamos a numérico**
+
+```{r}
+
+listings$price = gsub("\\,", "", listings$price)
+listings$price = as.numeric(gsub("\\$", "", listings$price))
+
+```
+
+**Quitamos signo % y pasamos a numérico**
+
+```{r}
+
+listings$host_response_rate = gsub("\\,", "", listings$host_response_rate)
+listings$host_response_rate = as.numeric(gsub("\\%", "", listings$host_response_rate))
+
+listings$host_acceptance_rate = gsub("\\,", "", listings$host_acceptance_rate)
+listings$host_acceptance_rate = as.numeric(gsub("\\%", "", listings$host_acceptance_rate))
+
+```
+
+**Convertimos las fechas**
+
+```{r}
+
+listings$host_since <- as.Date(listings$host_since)
+listings$first_review <- as.Date(listings$first_review)
+listings$last_review <- as.Date(listings$last_review)
+
+```
+
+**Extramos campos con listas como valores a columnas binarias**
+
+Estos es host_verifications
+
+```{r}
+library('plyr')
+library('dplyr')
+library("data.table") 
+
+host_verifications<- strsplit(listings$host_verifications,"', '")
+
+binary <- lapply(host_verifications, function(x) {
+                     vals <- unique(x) 
+                     x <- setNames(rep(1,length(vals)), vals);
+                     do.call(data.frame, as.list(x)) 
+                })
+
+# Unión de variables como columnas en un solo data.frame
+result <- do.call(rbind.fill, binary)
+
+result[is.na(result)] <- 0
+
+listingsNoLists <- cbind(listings,result)
+
+listingsNoLists$host_verifications <- NULL
+
+setnames(listingsNoLists, "X..email", "email")
+setnames(listingsNoLists, "government_id..", "government_id")
+setnames(listingsNoLists, "identity_manual..", "identity_manual")
+setnames(listingsNoLists, "reviews..", "reviews")
+setnames(listingsNoLists, "work_email..", "work_email")
+setnames(listingsNoLists, "email", "X..email..")
+listingsNoLists$X..phone <- NULL
+listingsNoLists$X..phone.. <- NULL
+listingsNoLists$phone.. <- NULL
+listingsNoLists$manual_offline.. <- NULL
+listingsNoLists$X..reviews.. <- NULL
+listingsNoLists$X..identity_manual.. <- NULL
+listingsNoLists$X..jumio <- NULL
+listingsNoLists$photographer.. <- NULL
+listingsNoLists$X..offline_government_id <- NULL
+```
+
+**Guardar csv limpio**
+
+```{r}
+
+write_csv(x = listingsNoLists, "data/listingsCiudadesLimpio.csv")
+
+```
+
+
